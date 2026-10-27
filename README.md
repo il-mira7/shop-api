@@ -27,6 +27,36 @@ make run
 - Swagger UI: [http://localhost:8080/swagger/index.html](http://localhost:8080/swagger/index.html)
 - База: миграции применяются автоматически при первом старте
 
+## Публикация за Nginx (этап 2)
+
+Конфигурация — [`src/nginx.conf`](src/nginx.conf). Nginx слушает `:80` (HTTP) и `:443` (HTTPS, самоподписанный сертификат локального домена `nginx.test`):
+
+- маршрутизация `/api` → `/api/v1`, по `/api/v1/` отдаётся Swagger UI приложения;
+- GET-запросы `/api/v1/` балансируются между тремя инстансами в соотношении **2:1:1** — `:8080` основной, `:8081`/`:8082` работают с read-only доступом к БД; мутации всегда уходят на основной инстанс (заголовок `X-Backend` показывает, кто отвечал);
+- GET-ответы кэшируются: зона 10 МБ в памяти + 100 МБ на диске, TTL 10 минут, заголовок `X-Cache-Status`;
+- `/` — статика из `var/www/static` (`expires 1h`), `/admin/` — pgAdmin, `/status` — страница статуса Nginx;
+- gzip-сжатие ответов (текст, JSON, XML — без медиа-типов).
+
+Запуск стенда:
+
+```bash
+# 1. read-only пользователь БД для инстансов :8081/:8082
+sudo -u postgres psql -c "CREATE USER readonly_user WITH PASSWORD 'password';"
+sudo -u postgres psql -c "GRANT CONNECT ON DATABASE shopapi TO readonly_user; GRANT USAGE ON SCHEMA public TO readonly_user; GRANT SELECT ON ALL TABLES IN SCHEMA public TO readonly_user;"
+
+# 2. три инстанса приложения (каждый в своём терминале)
+make run     # :8080 — основной
+make run2    # :8081 — read-only
+make run3    # :8082 — read-only
+
+# 3. nginx
+sudo nginx -t -c $PWD/nginx.conf   # проверить конфигурацию
+sudo nginx -c $PWD/nginx.conf      # запустить
+sudo nginx -s reload               # перечитать после изменений
+```
+
+Проверить балансировку: `for i in {1..8}; do curl -s -o /dev/null -D - http://localhost/api/v1/products | grep -i x-backend; done`
+
 ## API
 
 Все пути начинаются с префикса `/api/v1`.
@@ -80,6 +110,8 @@ make run
 ```
 src/
 ├── cmd/app/                 — точка входа, загрузка .env
+├── nginx.conf               — конфигурация Nginx (этап 2)
+├── var/www/static/          — статика для раздачи через Nginx
 └── internal/
     ├── config/              — конфигурация (DATABASE_URL)
     ├── di/                  — сборка зависимостей (uber-fx)
@@ -99,7 +131,9 @@ src/
 - ✅ **Этап 1**  — **REST API**: реализация API магазина на Go и PostgreSQL — CRUD четырёх сущностей, слои DTO/service/DAO, автомиграции, Swagger UI
   
   Требования задания: RESTful-методология, DTO и мапперы между слоями, паттерн Repository, полное покрытие методов спецификацией OpenAPI.
-- 🔜 **Этап 2** — **Nginx**: публикация сервиса за обратным прокси
+- ✅ **Этап 2**  — **Nginx**: сервис публикуется за обратным прокси на `:80`/`:443`
+  
+  Требования задания: маршрутизация `/api` → `/api/v1` → Swagger, раздача статики с `/` (index.html + image.png), `/admin` → pgAdmin, `/status` → страница статуса Nginx; балансировка GET-запросов на три инстанса приложения 2:1:1 (дополнительные — с read-only доступом к БД); кэширование GET-запросов; gzip-сжатие без медиа-типов; HTTPS с самоподписанным сертификатом (openssl + локальный DNS).
 - 🔜 **Этап 3** — **Авторизация и DI**: аутентификация, JWT, RBAC, gRPC
 
 Проект в работе — этапы будут дополняться.
