@@ -1,0 +1,12 @@
+# локальные секреты
+src/.env
+
+# сгенерированная Swagger-документация (пересоздаётся make run / make swag)
+src/docs/
+
+# собранные бинарники
+src/shopAPI
+bin/
+
+# macOS
+.DS_Store
