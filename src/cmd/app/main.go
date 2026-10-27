@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 	_ "shopAPI/docs"
-	"shopAPI/internal/di"
-	"shopAPI/internal/handler"
+	"shopAPI/internal/shop/di"
+	"shopAPI/internal/shop/handler"
 
 	"github.com/joho/godotenv"
 	"go.uber.org/fx"
@@ -14,6 +14,11 @@ import (
 //	@version		1.0
 //	@host			localhost:8080
 //	@BasePath		/api/v1
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Введите "Bearer {токен}" из /auth — обязательно со словом Bearer
 
 func main() {
 	if err := godotenv.Load(); err != nil {

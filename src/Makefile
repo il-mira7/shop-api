@@ -2,9 +2,11 @@ GO          ?= go
 SWAG        ?= swag
 APP         ?= shopAPI
 MAIN        ?= ./cmd/app/main.go
+AUTH        ?= ./cmd/auth/main.go
+PROTO_PATH  ?= proto/auth.proto
 READONLY_DB ?= postgres://readonly_user:password@localhost:5432/shopapi?sslmode=disable
 
-.PHONY: help run run2 run3 build swag clean
+.PHONY: help run run-auth run2 run3 build proto tools swag clean
 
 # Цель по умолчанию: справка
 help: ## Отобразить список доступных команд
@@ -17,9 +19,13 @@ swag: ## Перегенерировать Swagger-документацию (docs
 	@echo "==> Генерация Swagger-документации..."
 	$(SWAG) init -g $(MAIN)
 
-run: swag ## Запустить приложение (нужен src/.env и запущенный PostgreSQL)
+run: swag ## Запустить магазин (нужен src/.env и запущенный PostgreSQL)
 	@echo "==> Запуск: http://localhost:8080/swagger/index.html"
 	$(GO) run $(MAIN)
+
+run-auth: ## Запустить gRPC-сервис авторизации (:50051, нужна БД auth_db)
+	@echo "==> gRPC-сервис авторизации: :$(shell grep -oP '(?<=AUTH_GRPC_PORT=)\d+' .env 2>/dev/null || echo 50051)"
+	$(GO) run $(AUTH)
 
 run2: ## Второй инстанс на :8081 (read-only доступ к БД) — для балансировки
 	@echo "==> Инстанс :8081 (read-only)"
@@ -28,6 +34,18 @@ run2: ## Второй инстанс на :8081 (read-only доступ к БД)
 run3: ## Третий инстанс на :8082 (read-only доступ к БД) — для балансировки
 	@echo "==> Инстанс :8082 (read-only)"
 	PORT=8082 DATABASE_URL='$(READONLY_DB)' $(GO) run $(MAIN)
+
+proto: ## Сгенерировать Go-код из proto/auth.proto
+	@echo "==> Генерация pb-кода..."
+	protoc --go_out=. --go_opt=module=shopAPI \
+	       --go-grpc_out=. --go-grpc_opt=module=shopAPI \
+	       $(PROTO_PATH)
+
+tools: ## Установить инструменты: swag, protoc-gen-go, protoc-gen-go-grpc
+	@echo "==> Установка инструментов..."
+	$(GO) install github.com/swaggo/swag/cmd/swag@latest
+	$(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	$(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 build: swag ## Собрать бинарник shopAPI
 	@echo "==> Сборка..."
